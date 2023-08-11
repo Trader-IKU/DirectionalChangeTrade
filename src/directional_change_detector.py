@@ -70,7 +70,7 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
         (TMV, T, R) = indicators(dc_event, os_event, TimeUnit.DAY)
         label1 = "#{}  TMV: {:.5f}  ".format(i + 1, TMV)
         label2 = " T: {}  R: {:.5f}".format(T, R)
-        chart.drawText(x, y * 1.05, label1 + ' \n' + label2)
+        chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, label1 + ' \n' + label2)
         print(label1 + label2)
         
 def detect(filepath):
