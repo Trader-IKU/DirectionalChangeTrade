@@ -11,9 +11,7 @@ from timeframe import Timeframe
 from const import Const
 from converter import Converter
 from candle_chart import CandleChart, BandPlot, makeFig, gridFig, Colors
-
-from dc_detector import DCDetector, indicators, TimeUnit, coastline
-
+from dc_detector import DCDetector, Direction, indicators, TimeUnit, coastline
 from market_data import getCandles, str2time_fx
 from time_utils import TimeUtils
 
@@ -55,7 +53,7 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
     for i, [dc_event, os_event] in enumerate(events):
         if dc_event is None:
             print('#' +str(i + 1) + '... No DC event and OS event')
-        if dc_event.upward:
+        if dc_event.direction == Direction.Up:
             c = 'green'
         else:
             c = 'red'
@@ -70,7 +68,8 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
         (TMV, T, R) = indicators(dc_event, os_event, TimeUnit.DAY)
         label1 = "#{}  TMV: {:.5f}  ".format(i + 1, TMV)
         label2 = " T: {}  R: {:.5f}".format(T, R)
-        chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, label1 + ' \n' + label2)
+        chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05
+                       , label1 + ' \n' + label2)
         print(label1 + label2)
         
 def detect(filepath):
@@ -157,7 +156,7 @@ def analyze():
     price = price[-n:]
 
     detector = DCDetector(time, price)   
-    events = detector.detect_events(0.04, 0.04)
+    (events, _) = detector.detect_events(0.04, 0.04)
     print('DC event num:', len(events), ' Coastline:', coastline(events, TimeUnit.DAY))
     if len(events) > 0:
         plot_events( events, time, price)

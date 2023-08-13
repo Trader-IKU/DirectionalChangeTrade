@@ -2,18 +2,29 @@
 """
 Created on Sat Jul 29 08:31:27 2023
 
-@author: docs9
+@author: Trader-IKU
 """
 import polars as pl
 import numpy as np
 from numpy import array
+import copy
 
+
+class Direction: 
+    Up = 'up'
+    Down = 'down'
 
 class TimeUnit:
     DAY = 'day'
     HOUR = 'hour'
     MINUT = 'minute'
     SECOND = 'second' 
+    
+class EventStatus:
+    Nothing = 0
+    DC_first = 1
+    DC = 2
+    OS = 3
 
 def indicators(dc_event, os_event, time_unit: TimeUnit):
     try:
@@ -33,7 +44,6 @@ def indicators(dc_event, os_event, time_unit: TimeUnit):
     R = TMV / T
     return (TMV, T, R)
 
-
 def coastline(events, time_unit: TimeUnit):
     s = 0.0
     for dc_event, os_event in events:
@@ -42,71 +52,102 @@ def coastline(events, time_unit: TimeUnit):
             break
         s += tmv
     return s
+# ----
 
 class Event:
-    def __init__(self, i_begin, i_end, time_begin, time_end, price_begin, price_end, threshold_percent):
-        self.index = [i_begin, i_end]
-        self.term = [time_begin, time_end]
-        self.price = [price_begin, price_end]
-        self.delta = (price_end / price_begin - 1.0) * 100.0
-        self.upward = (self.delta >= 0)
-        self.downward = (self.delta < 0)
+    def __init__(self, i_begin, time_begin, price_begin):
+        self.index = [i_begin]
+        self.term = [time_begin]
+        self.price = [price_begin]
+        self.delta = None
+        self.direction = None
+        self.threshold_percent = None
+        self.i_refference = None
+        self.refference_price = None
+        
+    def set_refferene(self, i_refference: int, refference_price: float):
+        self.i_refference = i_refference
+        self.refference_price = refference_price
+        
+    def set_end(self, i_end, time_end, price_end, threshold_percent):
+        self.index.append(i_end)
+        self.term.append(time_end)
+        self.price.append(price_end)
+        self.delta = (self.price[1] / self.price[0] - 1.0) * 100.0
+        if self.delta >= 0:
+            self.direction = Direction.Up
+        else:
+            self.direction = Direction.Down
         self.threshold_percent = threshold_percent
-
+        
+    def description(self):
+        print('index: ', self.index)
+        print('term: ', self.term)
+        print('price: ', self.price)
+        print('delta: ', self.delta)
+        print('direction: ', self.direction)
+        print('threshold: ', self.threshold_percent)
+        print('refference: ', self.i_refference, self.refference_price)
+# -----
 
 class DCDetector:
     def __init__(self, time: array, prices: array):
         self.time = time
         self.prices = prices
-        
-    def detect_os(self, time: array, data: array, begin: int, th_up_percent: float, th_down_percent: float, is_upward):
-        ref = data[begin]
-        i_peak = begin
-        n = len(data)
-        for i in range(begin + 1, n):
-            delta = (data[i] / ref - 1.0) * 100.0
-            event = Event(begin, i_peak, time[begin], time[i_peak], data[begin], data[i_peak], 0.0)     
-            if is_upward:
-                if delta <= -1.0 *  th_down_percent:
-                    event.threshold_percent = th_down_percent
-                    return event
-                if data[i] > ref:
-                    ref = data[i]
-                    i_peak = i
-            else:
-                if delta >= th_up_percent:
-                    event.threshold_percent = th_up_percent
-                    return event
-                if data[i] < ref:
-                    ref = data[i]
-                    i_peak = i
-        return None
     
-    def detect_dc(self, time: array, data: array, begin: int, th_up_percent: float, th_down_percent: float, upward=None):
-        ref = data[begin]
-        n = len(data)
-        for i in range(begin + 1, n):
-            delta = (data[i] / ref - 1.0) * 100.0
-            event = Event(begin, i, time[begin], time[i], ref, data[i], 0)     
-            if upward is None:
-                # detect DC event
-                if delta >= th_up_percent:
-                    event.threshold_percent = th_up_percent
-                    return event
-                if delta < -1 * th_down_percent:
-                    event.threshold_percent = th_down_percent
-                    return event
+    def detect_first_dc(self, event: Event, time: array, prices: array, scan_begin: int, th_up_percent: float, th_down_percent: float):
+        n = len(prices)
+        if event is None:
+            event = Event(0, time[0], prices[0])
+            event.set_refferene(0, prices[0])
+        for i in range(scan_begin, n):
+            delta = (prices[i] / event.refference_price - 1.0) * 100.0
+            if delta >= th_up_percent:
+                event.set_end(i, time[i], prices[i], th_up_percent)
+                return (True, event, i)
+            if delta < -1 * th_down_percent:
+                event.set_end(i, time[i], prices[i], th_down_percent)
+                return (True, event, i)
+        return (False, event, (n - 1))
+    
+    def detect_next_dc(self, event_pair, time: array, prices: array, scan_begin: int, th_up_percent: float, th_down_percent: float):
+        n = len(prices)
+        last_dc_event = event_pair[0]
+        last_os_event = event_pair[1]
+        if last_os_event is None:
+            last_dc_event.description()
+            idx = last_dc_event.index[1] + 1
+            last_os_event = Event(idx, time[idx], prices[idx])
+            last_os_event.set_refferene(idx, prices[idx])
+        for i in range(scan_begin, n):
+            delta = (prices[i] / last_os_event.refference_price - 1.0) * 100.0
+            if last_dc_event.direction == Direction.Up:
+                if delta <= -1 * th_down_percent:
+                    idx = last_os_event.i_refference
+                    last_os_event.set_end(idx, time[idx], prices[idx], th_up_percent)
+                    pairs = [last_dc_event, last_os_event]
+                    dc_event = Event(idx, time[idx], prices[idx])
+                    dc_event.set_refferene(i + 1, prices[i + 1])
+                    dc_event.set_end(i + 1, time[i + 1], prices[i + 1], th_down_percent)
+                    return (pairs, dc_event, i + 1)
+                if prices[i] > last_os_event.refference_price:
+                    last_os_event.refference_price = prices[i]
+                    last_os_event.i_refference = i
             else:
-                if upward:
-                    if delta >= th_up_percent:
-                        event.threshold_percent = th_up_percent
-                        return event
-                else:
-                    if delta <= -1 * th_down_percent:
-                        event.threshold_percent = th_down_percent
-                        return event
-        return None
-        
+                if delta >= th_up_percent:
+                    idx = last_os_event.i_refference
+                    last_os_event.set_end(idx, time[idx], prices[idx], th_down_percent)
+                    pairs = [last_dc_event, last_os_event]
+                    dc_event = Event(idx, time[idx], prices[idx])
+                    dc_event.set_refferene(i + 1, prices[i + 1])
+                    dc_event.set_end(i + 1, time[i + 1], prices[i + 1], th_up_percent)
+                    return (pairs, dc_event, i + 1)
+                if prices[i] < last_os_event.refference_price:
+                    last_os_event.refference_price = prices[i]
+                    last_os_event.i_refference = i
+        pairs = [last_dc_event, last_os_event]
+        return (pairs, None, n)
+    
     def search_max_point(self, data: array, begin: int, min_limit: float):
         max_value = -1
         max_i = -1
@@ -127,23 +168,40 @@ class DCDetector:
                 min_i = i
             if data[i] >= max_limit:
                 break
-        return (min_i, min_value)        
+        return (min_i, min_value)
     
-    def detect_events(self, th_up_percent, th_down_percent):
-        time = self.time.copy()
-        prices = self.prices.copy()
+    def make_status(self, length: int, events):
+        s = np.full(length, np.nan)
+        for dc_event, os_event in events:
+            if dc_event.direction == Direction.Up:
+                s[dc_event.index[0]] = EventStatus.DC_up_begin 
+                for i in range(dc_event.index[0] + 1, dc_event.index[1]):
+                    s[i] = EventStatus.DC_up
+                s[dc_event.index[1]] = EventStatus.DC_up_end
+            else:
+                s[os_event.index[0]] = EventStatus.OS_down_begin 
+                for i in range(os_event.index[0] + 1, os_event.index[1]):
+                    s[i] = EventStatus.DC_down
+                s[os_event.index[1]] = EventStatus.OS_up_end
+        return s
+                
+    def detect_events(self, begin, last_dc_event: Event, time, prices, th_up_percent: float, th_down_percent: float):
         events = []
-        begin = 0        
+        found, dc_event, index = self.detect_first_dc(last_dc_event, time, prices, begin, th_up_percent, th_down_percent)
+        if not found:
+            return (events, index)
+        begin = index
+        last_dc_event = dc_event
         while True:
-            dc_event = self.detect_dc(time, prices, begin, th_up_percent, th_down_percent)
+            (pairs, dc_event, index) = self.detect_next_dc([last_dc_event, None], time, prices, begin, th_up_percent, th_down_percent)
+            if pairs[1] is None:
+                events.append(pairs)
+                return (events, index)
+            events.append(pairs)
             if dc_event is None:
-                return events
-            begin = dc_event.index[1]
-            direction = dc_event.upward
-            os_event = self.detect_os(time, prices, begin, th_up_percent, th_down_percent, direction)
-            events.append([dc_event, os_event])
-            if os_event is None:
-                return events
-            begin = os_event.index[1]
-        return events        
+                return (events, index)
+            last_dc_event = dc_event
+            #dc_event.description()
+            begin = index
+        return (events, index)
         

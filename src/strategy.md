@@ -5,12 +5,12 @@
 **DCイベント後のOSイベントにトレンド方向にエントリする。**
 
  1. DCイベントを検出する
- 　thresholdを
-	  (1) アップトレンド
+ 　thresholdを次のように設定する。
+ 　
+   (1) アップトレンド
 			  th_up_percent (0...100)
  　 (2) ダウントレンド
  　         th_down_percent (0...100)
- 　とする
  　                    
  2. OSイベント始まりよりhorizon(Tick数、または時間）待つ
 	 →この間にOSイベントが終了すれば１に戻る
@@ -19,13 +19,13 @@
  
     (1) アップトレンド
 
-- P_DC_end * (1 - th_up_pullback_percent / 100) より大きければ買いエントリーする。
-- ロスカット価格をエントリ価格 * (1 - th_up_pullback_percent / 100)に設定する。
+- P_DC_end * (1 - pullback_up_percent / 100) より大きければ買いエントリーする。
+- ロスカット価格をエントリ価格 * (1 - pullback_up_percent / 100)に設定する。
 	    
    (2) ダウントレンド時
 
-- P_DC_end * (1 + th_down_pullback_percent / 100) より小さければ買いエントリーする。
-- ロスカット価格をエントリ価格 * (1 + th_down_pullback_percent / 100)に設定する。
+- P_DC_end * (1 + pullback_down_percent / 100) より小さければ買いエントリーする。
+- ロスカット価格をエントリ価格 * (1 + pullback_down_percent / 100)に設定する。
 
 ### ■エキジット
 次のいずれかの条件を満たしたらポジションをクローズする。
