@@ -80,7 +80,7 @@ class Event:
             self.direction = Direction.Down
         self.threshold_percent = threshold_percent
         
-    def description(self):
+    def desc(self):
         print('index: ', self.index)
         print('term: ', self.term)
         print('price: ', self.price)
@@ -95,11 +95,10 @@ class DCDetector:
         self.time = time
         self.prices = prices
     
-    def detect_first_dc(self, event: Event, time: array, prices: array, scan_begin: int, th_up_percent: float, th_down_percent: float):
+    def detect_first_dc(self, time: array, prices: array, scan_begin: int, th_up_percent: float, th_down_percent: float):
         n = len(prices)
-        if event is None:
-            event = Event(0, time[0], prices[0])
-            event.set_refferene(0, prices[0])
+        event = Event(0, time[0], prices[0])
+        event.set_refferene(0, prices[0])
         for i in range(scan_begin, n):
             delta = (prices[i] / event.refference_price - 1.0) * 100.0
             if delta >= th_up_percent:
@@ -112,41 +111,49 @@ class DCDetector:
     
     def detect_next_dc(self, event_pair, time: array, prices: array, scan_begin: int, th_up_percent: float, th_down_percent: float):
         n = len(prices)
-        last_dc_event = event_pair[0]
-        last_os_event = event_pair[1]
-        if last_os_event is None:
-            last_dc_event.description()
-            idx = last_dc_event.index[1] + 1
-            last_os_event = Event(idx, time[idx], prices[idx])
-            last_os_event.set_refferene(idx, prices[idx])
+        dc_event = event_pair[0]
+        os_event = event_pair[1]
+        if os_event is None:
+            dc_event.desc()
+            idx = dc_event.index[1]
+            if idx >= n:
+                print('Error')
+                exit()
+            os_event = Event(idx, time[idx], prices[idx])
+            os_event.set_refferene(idx, prices[idx])
+        pairs = []
         for i in range(scan_begin, n):
-            delta = (prices[i] / last_os_event.refference_price - 1.0) * 100.0
-            if last_dc_event.direction == Direction.Up:
+            delta = (prices[i] / os_event.refference_price - 1.0) * 100.0
+            if dc_event.direction == Direction.Up:
                 if delta <= -1 * th_down_percent:
-                    idx = last_os_event.i_refference
-                    last_os_event.set_end(idx, time[idx], prices[idx], th_up_percent)
-                    pairs = [last_dc_event, last_os_event]
+                    idx = os_event.i_refference
+                    os_event.set_end(idx, time[idx], prices[idx], th_up_percent)
+                    pair = [dc_event, os_event]
                     dc_event = Event(idx, time[idx], prices[idx])
-                    dc_event.set_refferene(i + 1, prices[i + 1])
-                    dc_event.set_end(i + 1, time[i + 1], prices[i + 1], th_down_percent)
-                    return (pairs, dc_event, i + 1)
-                if prices[i] > last_os_event.refference_price:
-                    last_os_event.refference_price = prices[i]
-                    last_os_event.i_refference = i
+                    dc_event.set_refferene(i, prices[i])
+                    dc_event.set_end(i, time[i], prices[i], th_down_percent)
+                    pairs.append(pair)
+                    pairs.append([dc_event, None])
+                    return (True, pairs, i + 1)
+                if prices[i] > os_event.refference_price:
+                    os_event.refference_price = prices[i]
+                    os_event.i_refference = i
             else:
                 if delta >= th_up_percent:
-                    idx = last_os_event.i_refference
-                    last_os_event.set_end(idx, time[idx], prices[idx], th_down_percent)
-                    pairs = [last_dc_event, last_os_event]
+                    idx = os_event.i_refference
+                    os_event.set_end(idx, time[idx], prices[idx], th_down_percent)
+                    pair = [dc_event, os_event]
                     dc_event = Event(idx, time[idx], prices[idx])
-                    dc_event.set_refferene(i + 1, prices[i + 1])
-                    dc_event.set_end(i + 1, time[i + 1], prices[i + 1], th_up_percent)
-                    return (pairs, dc_event, i + 1)
-                if prices[i] < last_os_event.refference_price:
-                    last_os_event.refference_price = prices[i]
-                    last_os_event.i_refference = i
-        pairs = [last_dc_event, last_os_event]
-        return (pairs, None, n)
+                    dc_event.set_refferene(i, prices[i])
+                    dc_event.set_end(i, time[i], prices[i], th_up_percent)
+                    pairs.append(pair)
+                    pairs.append([dc_event, None])
+                    return (True, pairs, i + 1)
+                if prices[i] < os_event.refference_price:
+                    os_event.refference_price = prices[i]
+                    os_event.i_refference = i
+        pairs = [[dc_event, os_event]]
+        return (False, pairs, n)
     
     def search_max_point(self, data: array, begin: int, min_limit: float):
         max_value = -1
@@ -185,23 +192,27 @@ class DCDetector:
                 s[os_event.index[1]] = EventStatus.OS_up_end
         return s
                 
-    def detect_events(self, begin, last_dc_event: Event, time, prices, th_up_percent: float, th_down_percent: float):
-        events = []
-        found, dc_event, index = self.detect_first_dc(last_dc_event, time, prices, begin, th_up_percent, th_down_percent)
-        if not found:
-            return (events, index)
-        begin = index
-        last_dc_event = dc_event
+    def detect_events(self, begin, events, pair, time, prices, th_up_percent: float, th_down_percent: float):
+        if len(events) == 0 and pair is None:
+            found, dc_event, index = self.detect_first_dc(time, prices, begin, th_up_percent, th_down_percent)
+            if found:
+                pair = [dc_event, None]
+                begin = index
+            else:
+                return (None, index)
+        if events is None:
+            events = []
         while True:
-            (pairs, dc_event, index) = self.detect_next_dc([last_dc_event, None], time, prices, begin, th_up_percent, th_down_percent)
-            if pairs[1] is None:
-                events.append(pairs)
-                return (events, index)
-            events.append(pairs)
-            if dc_event is None:
-                return (events, index)
-            last_dc_event = dc_event
-            #dc_event.description()
-            begin = index
-        return (events, index)
+            if pair is None:
+                last_pair = events[-1]
+            else:
+                last_pair = pair                
+            (found, pairs, index) = self.detect_next_dc(last_pair, time, prices, begin, th_up_percent, th_down_percent)            
+            if found:
+                events.append(pairs[0])
+                pair = pairs[1]
+                begin = index
+            else:
+                pair = pairs[0]   
+                return (pair, index)
         

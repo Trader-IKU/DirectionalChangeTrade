@@ -57,8 +57,19 @@ class AlternateTrade:
         detector = DCDetector(data.time, data.prices) 
         time = data.time
         prices = data.prices
-        begin = 0 
-        (events, index) = detector.detect_events(begin, None, time, prices, self.param_up.th_percent, self.param_down.th_percent)
+        begin = 0
+        
+        n = len(prices)
+        
+        i = 2000
+        events = []
+        tmp_pair = None
+        while i < n:
+            t = time[: i]
+            p = prices[: i]
+            (tmp_pair, index) = detector.detect_events(begin, events, tmp_pair, t, p, self.param_up.th_percent, self.param_down.th_percent)
+            begin = index
+            i += 2
         return events
         
     def begin(self, data: DataBuffer):
@@ -73,11 +84,8 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
     #chart.drawCandle(time, op, hi, lo, cl)
     chart.drawLine(time, price, color='blue')
     for i, evs in enumerate(events):
-        if len(evs) == 1:
-            dc_event = evs[0]
-            os_event = None
-        else:
-            dc_event, os_event = evs
+
+        dc_event, os_event = evs
         if dc_event is None:
             print('#' +str(i + 1) + '... No DC event and OS event')
         if dc_event.direction == Direction.Up:
@@ -93,8 +101,8 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
             break
         chart.drawLine(os_event.term, os_event.price, should_set_xlim=False, linewidth=3.0, color=c, linestyle='dotted')
         print('<' + str(i + 1) + '>')
-        dc_event.description()
-        os_event.description()
+        dc_event.desc()
+        os_event.desc()
         print('--')
         (TMV, T, R) = indicators(dc_event, os_event, TimeUnit.DAY)
         label1 = "#{}  TMV: {:.5f}  ".format(i + 1, TMV)
