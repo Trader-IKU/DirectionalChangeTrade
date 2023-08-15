@@ -53,14 +53,13 @@ class AlternateTrade:
         self.param_up = param_up
         self.param_down = param_down
         
-        
     def back_test(self, data: DataBuffer):
         detector = DCDetector(data.time, data.prices) 
         time = data.time
         prices = data.prices
         
         n = len(prices)   
-        i = 2000
+        i = 100
         t = time[:i]
         p = prices[:i]
         
@@ -69,35 +68,18 @@ class AlternateTrade:
         while i < n:
             t = time[: i]
             p = prices[: i]
-            events = detector.update(t, p)
+            count = detector.update(t, p)
+            if count == 0:
+                pair = detector.pair
+                if pair is None:
+                    print('Found: ', count, ' pair:', pair)
+                    
+                else:
+                    print('Found: ', count, ' pair:', pair[0].valid(), pair[1].valid())
             i += 100
-        return events
-
-    def detect_events(self, data: DataBuffer):
-        detector = DCDetector(data.time, data.prices) 
-        time = data.time
-        prices = data.prices
-        begin = 0
-        
-        n = len(prices)
-        
-        i = 2000
-        events = []
-        tmp_pair = None
-        while i < n:
-            t = time[: i]
-            p = prices[: i]
-            (tmp_pair, index) = detector.detect_events(begin, events, tmp_pair, t, p, self.param_up.th_percent, self.param_down.th_percent)
-            begin = index
-            i += 2
-        return events
-        
-    def begin(self, data: DataBuffer):
-        self.positions = []
-        events = self.detect_events(data)
-        self.events = events
-        return events
+        return detector.events
 # -----
+
 def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOUR):
     fig, ax = makeFig(1, 1, (30,10))
     chart = CandleChart(fig, ax, title='', date_format=date_format)
@@ -120,17 +102,16 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
             print('#' +str(i + 1) + '... No OS event')
             break
         chart.drawLine(os_event.term, os_event.price, should_set_xlim=False, linewidth=3.0, color=c, linestyle='dotted')
-        print('<' + str(i + 1) + '>')
-        dc_event.desc()
-        os_event.desc()
-        print('--')
+        #print('<' + str(i + 1) + '>')
+        #dc_event.desc()
+        #os_event.desc()
+        #print('--')
         (TMV, T, R) = indicators(dc_event, os_event, TimeUnit.DAY)
         label1 = "#{}  TMV: {:.5f}  ".format(i + 1, TMV)
         label2 = " T: {}  R: {:.5f}".format(T, R)
-        chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05
-                       , label1 + ' \n' + label2)
+        chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, label1 + ' \n' + label2)
         print(label1 + label2)
-        print('')
+        
         
 def test():
     with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:

@@ -64,6 +64,7 @@ class Event:
         self.threshold_percent = None
         self.i_refference = None
         self.refference_price = None
+        self.is_valid = False
         
     def set_refferene(self, i_refference: int, refference_price: float):
         self.i_refference = i_refference
@@ -79,6 +80,10 @@ class Event:
         else:
             self.direction = Direction.Down
         self.threshold_percent = threshold_percent
+        self.is_valid = True
+
+    def valid(self):
+        return self.is_valid
         
     def desc(self):
         print('index: ', self.index)
@@ -114,7 +119,7 @@ class DCDetector:
         dc_event = event_pair[0]
         os_event = event_pair[1]
         if os_event is None:
-            dc_event.desc()
+            #dc_event.desc()
             idx = dc_event.index[1]
             if idx >= n:
                 print('Error')
@@ -199,9 +204,10 @@ class DCDetector:
                 pair = [dc_event, None]
                 begin = index
             else:
-                return (None, index)
+                return (0, None, index)
         if events is None:
             events = []
+        count = 0
         while True:
             if pair is None:
                 last_pair = events[-1]
@@ -212,9 +218,10 @@ class DCDetector:
                 events.append(pairs[0])
                 pair = pairs[1]
                 begin = index
+                count += 1
             else:
                 pair = pairs[0]   
-                return (pair, index)
+                return (count, pair, index)
         
     def run(self, time, prices, th_up_percent, th_down_percent):
         self.begin = 0
@@ -222,15 +229,15 @@ class DCDetector:
         self.pair = None
         self.th_up_percent = th_up_percent
         self.th_down_percent = th_down_percent
-        (pair, index) = self.detect_events(self.begin, self.events, self.pair, time, prices, self.th_up_percent, self.th_down_percent)
+        (count, pair, index) = self.detect_events(self.begin, self.events, self.pair, time, prices, self.th_up_percent, self.th_down_percent)
         self.pair = pair
         self.begin = index
-        return self.events
+        return count
     
     def update(self, time, prices):
-        (pair, index) = self.detect_events(self.begin, self.events, self.pair, time, prices, self.th_up_percent, self.th_down_percent)
+        (count, pair, index) = self.detect_events(self.begin, self.events, self.pair, time, prices, self.th_up_percent, self.th_down_percent)
         self.pair = pair
         self.begin = index
-        return self.events    
+        return count   
     
     
