@@ -53,6 +53,26 @@ class AlternateTrade:
         self.param_up = param_up
         self.param_down = param_down
         
+        
+    def back_test(self, data: DataBuffer):
+        detector = DCDetector(data.time, data.prices) 
+        time = data.time
+        prices = data.prices
+        
+        n = len(prices)   
+        i = 2000
+        t = time[:i]
+        p = prices[:i]
+        
+        detector.run(t, p, self.param_up.th_percent, self.param_down.th_percent)
+        i += 100
+        while i < n:
+            t = time[: i]
+            p = prices[: i]
+            events = detector.update(t, p)
+            i += 100
+        return events
+
     def detect_events(self, data: DataBuffer):
         detector = DCDetector(data.time, data.prices) 
         time = data.time
@@ -130,7 +150,7 @@ def test():
     param_down = TradeRuleParams()
     param_down.th_percent = 0.04
     trade = AlternateTrade(param_up, param_down)
-    events = trade.begin(buffer)
+    events = trade.back_test(buffer)
     plot_events(events, time, prices)
 
 

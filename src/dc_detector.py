@@ -216,3 +216,21 @@ class DCDetector:
                 pair = pairs[0]   
                 return (pair, index)
         
+    def run(self, time, prices, th_up_percent, th_down_percent):
+        self.begin = 0
+        self.events = []
+        self.pair = None
+        self.th_up_percent = th_up_percent
+        self.th_down_percent = th_down_percent
+        (pair, index) = self.detect_events(self.begin, self.events, self.pair, time, prices, self.th_up_percent, self.th_down_percent)
+        self.pair = pair
+        self.begin = index
+        return self.events
+    
+    def update(self, time, prices):
+        (pair, index) = self.detect_events(self.begin, self.events, self.pair, time, prices, self.th_up_percent, self.th_down_percent)
+        self.pair = pair
+        self.begin = index
+        return self.events    
+    
+    
