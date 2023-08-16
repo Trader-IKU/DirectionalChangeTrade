@@ -26,7 +26,10 @@ class TradeRuleParams:
         self.horizon = 0
         self.pullback_percent: float = 0
         self.close_timelimit: float = 2.0
-        self.losscut: float = 0.0        
+        self.losscut: float = 0.0   
+        self.is_open = None
+        
+# --    
         
 class Position:
     def __init__(self):
@@ -38,7 +41,9 @@ class Position:
         self.time: timedelta = None
         self.close_time: datetime = None
         self.close_price: float = 0
-        
+
+# --
+    
 class DataBuffer:
     def __init__(self, time, prices):
         self.time = time
@@ -47,11 +52,23 @@ class DataBuffer:
     def update(self, time, prices):
         self.time += time
         self.prices += prices        
+# --
         
 class AlternateTrade:
     def __init__(self, param_up: TradeRuleParams, param_down: TradeRuleParams):
         self.param_up = param_up
         self.param_down = param_down
+        
+    def update(self, time, prices, i_last, dc_event):
+        
+        return
+    
+# --
+        
+class Handling:    
+    def __init__(self, trade: AlternateTrade):
+        self.trade = trade
+        pass
         
     def back_test(self, data: DataBuffer):
         detector = DCDetector(data.time, data.prices) 
@@ -63,19 +80,16 @@ class AlternateTrade:
         t = time[:i]
         p = prices[:i]
         
-        detector.run(t, p, self.param_up.th_percent, self.param_down.th_percent)
+        detector.run(t, p, self.trade.param_up.th_percent, self.trade.param_down.th_percent)
+        i_last = i
         i += 100
-        while i < n:
+        while i < n:            
             t = time[: i]
             p = prices[: i]
-            count = detector.update(t, p)
-            if count == 0:
-                pair = detector.pair
-                if pair is None:
-                    print('Found: ', count, ' pair:', pair)
-                    
-                else:
-                    print('Found: ', count, ' pair:', pair[0].valid(), pair[1].valid())
+            dc_event_num = detector.update(t, p)
+            if dc_event_num > 0:
+                dc_event = detector.pair[0]
+                self.trade.update(t, p, i_last, dc_event)
             i += 100
         return detector.events
 # -----
@@ -130,8 +144,10 @@ def test():
     param_up.th_percent = 0.04
     param_down = TradeRuleParams()
     param_down.th_percent = 0.04
-    trade = AlternateTrade(param_up, param_down)
-    events = trade.back_test(buffer)
+    trade_rule = AlternateTrade(param_up, param_down)
+    
+    loop = Handling(trade_rule)
+    events = loop.back_test(buffer)
     plot_events(events, time, prices)
 
 
