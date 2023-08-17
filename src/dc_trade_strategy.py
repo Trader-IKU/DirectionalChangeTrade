@@ -26,22 +26,68 @@ class TradeRuleParams:
         self.horizon = 0
         self.pullback_percent: float = 0
         self.close_timelimit: float = 2.0
-        self.losscut: float = 0.0   
-        self.is_open = None
+        self.losscut: float = 0.0
         
-# --    
-        
+def param_long():
+    param = TradeRuleParams()
+    param.th_percent = 0.04
+    param.horizon = 2
+    param.pullback_percent = 0.02
+    param.close_timelimit = 3.0    
+    param.losscut = 0.2
+    return param
+    
+def param_short():
+    param = TradeRuleParams()
+    param.th_percent = 0.04
+    param.horizon = 2
+    param.pullback_percent = 0.02
+    param.close_timelimit = 3.0    
+    param.losscut = 0.02        
+    return param 
+    
+# --
+
+class Kind:
+    Short = 'short'
+    Long = 'long'
+    
+class Cause:
+    losscut = 'losscut'
+    timelimit = 'timelimit'
+    eventover = 'eventover'
+    
 class Position:
-    def __init__(self):
+    def __init__(self, kind: Kind, param: TradeRuleParams, event_no: int):
+        self.kind: Kind = kind
+        self.rule = param
+        self.event_no = event_no
         self.entry_time: datetime = None
         self.entry_price: float = 0
         self.losscut_price: float = 0
         self.close_limit: datetime = None
         self.profit: float = 0
-        self.time: timedelta = None
         self.close_time: datetime = None
         self.close_price: float = 0
-
+        self.closed = False
+        self.cause = None
+        
+    def entry(self, time, price):
+        self.etnry_time = time
+        self.entry_price = price
+        
+    def close(self, time, price, cause: Cause):
+        self.close_time = time
+        self.close_price = price
+        self.cause = cause
+        self.profit = 100 * ((price / self.entry_price) - 1.0)
+        self.closed = True
+        
+    def is_closed(self):
+        return self.closed
+    
+    def desc(self):
+        print('event_no:', self.event_no, 'kind:', self.kind, 'cause:', self.cause, 'profit:', self.profit)
 # --
     
 class DataBuffer:
@@ -58,11 +104,69 @@ class AlternateTrade:
     def __init__(self, param_up: TradeRuleParams, param_down: TradeRuleParams):
         self.param_up = param_up
         self.param_down = param_down
+        self.positions = []
         
-    def update(self, time, prices, i_last, dc_event):
+    def close_all(self, time, prices, dc_event):
+        for position in self.positions:
+            if not position.is_closed():
+                position.close(time[-1], prices[-1], Cause.eventover)       
         
+    def check_close(self, time, prices, dc_event):
+        for position in self.positions:
+            if not position.is_closed():
+                # profitをアップデート
+                profit = 100 * ((prices[-1] / position.entry_price) - 1.0)
+                # losscut チェック
+                if position.kind == Kind.Long:
+                    if profit <= - 1.0 * position.rule.losscut:
+                        position.close(time[-1], prices[-1], Cause.losscut)
+                else:
+                    if profit >= position.rule.losscut:
+                        position.close(time[-1], prices[-1], Cause.losscut)
+                # 時間チェック
+                dt = time[-1] - dc_event.term[1]
+                k = dt / (dc_event.term[1] - dc_event.term[0])
+                if position.kind == Kind.Long:
+                    if k > position.rule.close_timelimit:
+                        position.close(time[-1], prices[-1], Cause.timelimit)
+                else:
+                    if k > position.rule.close_timelimit:
+                        position.close(time[-1], prices[-1], Cause.timelimit)
+                
+    def entry(self, time, prices, i_last, dc_event, event_no):
+        i = len(prices) - 1
+        dt = time[i_last] - time[i]
+        di = i - i_last + 1
+        if dc_event.direction == Direction.Up:
+            #Long
+            if(type(self.param_up.horizon)) == int:
+                if di <= self.param_up.horizon:
+                    return
+            else:
+                if dt <= self.param_up.horizon:
+                    return
+            d =  100 * (prices[-1] / dc_event.price[1] -1)
+            if d < -1 * self.param_up.pullback_percent:
+                return
+        else:
+            #Short
+            if(type(self.param_down.horizon)) == int:
+                if di <= self.param_down.horizon:
+                    return
+            else:
+                if dt <= self.param_down.horizon:
+                    return
+            d =  100 * (prices[-1] / dc_event.price[1] -1)
+            if d >   self.param_down.pullback_percent:
+                return        
+        # Entry
+        if dc_event.direction == Direction.Up:       
+            position = Position(Kind.Long, self.param_up, event_no)
+        else:
+            position = Position(Kind.Short, self.param_down, event_no)
+        position.entry(time[-1], prices[-1])
+        self.positions.append(position)
         return
-    
 # --
         
 class Handling:    
@@ -73,13 +177,11 @@ class Handling:
     def back_test(self, data: DataBuffer):
         detector = DCDetector(data.time, data.prices) 
         time = data.time
-        prices = data.prices
-        
+        prices = data.prices        
         n = len(prices)   
         i = 100
         t = time[:i]
         p = prices[:i]
-        
         detector.run(t, p, self.trade.param_up.th_percent, self.trade.param_down.th_percent)
         i_last = i
         i += 100
@@ -87,11 +189,16 @@ class Handling:
             t = time[: i]
             p = prices[: i]
             dc_event_num = detector.update(t, p)
-            if dc_event_num > 0:
+            if dc_event_num == 0:
+                if len(detector.events) > 0:
+                    dc_event = detector.events[-1][0]
+                    self.trade.check_close(time, prices, dc_event)   
+            else:
                 dc_event = detector.pair[0]
-                self.trade.update(t, p, i_last, dc_event)
+                self.trade.close_all(time, prices, dc_event)
+                self.trade.entry(t, p, i_last, dc_event, len(detector.events))
             i += 100
-        return detector.events
+        return detector.events, self.trade.positions
 # -----
 
 def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOUR):
@@ -100,7 +207,6 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
     #chart.drawCandle(time, op, hi, lo, cl)
     chart.drawLine(time, price, color='blue')
     for i, evs in enumerate(events):
-
         dc_event, os_event = evs
         if dc_event is None:
             print('#' +str(i + 1) + '... No DC event and OS event')
@@ -125,7 +231,10 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
         label2 = " T: {}  R: {:.5f}".format(T, R)
         chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, label1 + ' \n' + label2)
         print(label1 + label2)
-        
+
+def disp(positions):
+    for position in positions:
+       position.desc()
         
 def test():
     with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
@@ -140,16 +249,11 @@ def test():
     
     m = n #2000
     buffer = DataBuffer(time[:m], prices[:m])
-    param_up = TradeRuleParams()
-    param_up.th_percent = 0.04
-    param_down = TradeRuleParams()
-    param_down.th_percent = 0.04
-    trade_rule = AlternateTrade(param_up, param_down)
-    
+    trade_rule = AlternateTrade(param_long(), param_short())
     loop = Handling(trade_rule)
-    events = loop.back_test(buffer)
+    events, positions = loop.back_test(buffer)
+    disp(positions)
     plot_events(events, time, prices)
-
 
 if __name__ == '__main__':
     test()
