@@ -30,20 +30,20 @@ class TradeRuleParams:
         
 def param_long():
     param = TradeRuleParams()
-    param.th_percent = 0.04
-    param.horizon = 2
-    param.pullback_percent = 0.02
-    param.close_timelimit = 3.0    
-    param.losscut = 0.2
+    param.th_percent = 0.07
+    param.horizon = 0
+    param.pullback_percent = 1
+    param.close_timelimit = 100
+    param.losscut = 1
     return param
     
 def param_short():
     param = TradeRuleParams()
-    param.th_percent = 0.04
-    param.horizon = 2
-    param.pullback_percent = 0.02
-    param.close_timelimit = 3.0    
-    param.losscut = 0.02        
+    param.th_percent = 0.07
+    param.horizon = 1
+    param.pullback_percent = 1
+    param.close_timelimit = 100    
+    param.losscut = 1 
     return param 
     
 # --
@@ -179,12 +179,12 @@ class Handling:
         time = data.time
         prices = data.prices        
         n = len(prices)   
-        i = 100
+        i = 200
         t = time[:i]
         p = prices[:i]
         detector.run(t, p, self.trade.param_up.th_percent, self.trade.param_down.th_percent)
         i_last = i
-        i += 100
+        i += 5
         while i < n:            
             t = time[: i]
             p = prices[: i]
@@ -197,7 +197,7 @@ class Handling:
                 dc_event = detector.pair[0]
                 self.trade.close_all(time, prices, dc_event)
                 self.trade.entry(t, p, i_last, dc_event, len(detector.events))
-            i += 100
+            i += 5
         return detector.events, self.trade.positions
 # -----
 
@@ -236,6 +236,10 @@ def disp(positions):
     for position in positions:
        position.desc()
         
+def save(path, time, prices):
+    df = pd.DataFrame({'Time': time, 'Price': prices})
+    df.to_excel(path, index=False)
+        
 def test():
     with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
         ticks = pickle.load(f)
@@ -245,7 +249,8 @@ def test():
     prices = ticks[Const.PRICE]
     n = 30000
     time = time[-n:]
-    prices = prices[-n:]    
+    prices = prices[-n:]
+    save('./gbpjpy.xlsx', time, prices)
     
     m = n #2000
     buffer = DataBuffer(time[:m], prices[:m])
