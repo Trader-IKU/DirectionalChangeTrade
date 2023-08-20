@@ -30,18 +30,18 @@ class TradeRuleParams:
         
 def param_long():
     param = TradeRuleParams()
-    param.th_percent = 0.07
+    param.th_percent = 0.06
     param.horizon = 0
-    param.pullback_percent = 1
+    param.pullback_percent = 0.03
     param.close_timelimit = 100
     param.losscut = 1
     return param
     
 def param_short():
     param = TradeRuleParams()
-    param.th_percent = 0.07
+    param.th_percent = 0.06
     param.horizon = 1
-    param.pullback_percent = 1
+    param.pullback_percent = 0.03
     param.close_timelimit = 100    
     param.losscut = 1 
     return param 
@@ -237,8 +237,11 @@ def disp(positions):
        position.desc()
         
 def save(path, time, prices):
-    df = pd.DataFrame({'Time': time, 'Price': prices})
-    df.to_excel(path, index=False)
+    tlist = []
+    for t in time:
+        tlist.append(t.strftime('%Y/%m/%d %H:%M:%S.%f'))
+    df = pd.DataFrame({'Time': tlist, 'Price': prices})
+    df.to_excel(path, index=True)
         
 def test():
     with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
@@ -250,7 +253,7 @@ def test():
     n = 30000
     time = time[-n:]
     prices = prices[-n:]
-    save('./gbpjpy.xlsx', time, prices)
+    #save('./gbpjpy.xlsx', time, prices)
     
     m = n #2000
     buffer = DataBuffer(time[:m], prices[:m])
