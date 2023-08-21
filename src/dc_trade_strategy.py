@@ -30,19 +30,19 @@ class TradeRuleParams:
         
 def param_long():
     param = TradeRuleParams()
-    param.th_percent = 0.03
+    param.th_percent = 0.05
     param.horizon = 0
-    param.pullback_percent = 0.03
-    param.close_timelimit = 100
+    param.pullback_percent = 0.04
+    param.close_timelimit = 10
     param.losscut = 1
     return param
     
 def param_short():
     param = TradeRuleParams()
-    param.th_percent = 0.03
+    param.th_percent = 0.05
     param.horizon = 0
-    param.pullback_percent = 0.03
-    param.close_timelimit = 100    
+    param.pullback_percent = 0.04
+    param.close_timelimit = 10    
     param.losscut = 1 
     return param 
     
@@ -235,7 +235,72 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
 def disp(positions):
     for position in positions:
        position.desc()
-        
+       
+def validation(time, prices, th_up, th_down):
+    dc_end_up = 1 
+    dc_end_down = -1
+    up = 1 
+    down = -1
+    n = len(prices)
+    ref = prices[0]
+    refs = np.full(n, np.nan)
+    ror = np.full(n, np.nan)
+    status = np.full(n, np.nan)
+    
+    i = 1
+    for i in range(1, n):
+        refs[i] = ref
+        r = (prices[i] / ref - 1) * 100 
+        ror[i] = r        
+        if r >= th_up:
+            status[i] = dc_end_up
+            i_ref = i
+            begin = i + 1 
+            ref = prices[i]
+            direction = down
+            break
+        elif r <= -1 * th_down :
+            status[i] = dc_end_down
+            i_ref = i
+            begin = i + 1
+            direction = up
+            ref = prices[i]
+            break
+
+    for i in range(begin, n):
+        refs[i] = ref
+        r = (prices[i] / ref - 1) * 100 
+        ror[i] = r
+        if direction == up:
+            if r >= th_up:
+                status[i] = dc_end_up
+                ref = prices[i]
+                i_ref = i
+                continue 
+            if prices[i] > ref:
+                ref = prices[i]
+                i_ref = i 
+        else:
+            if r <= -1 * th_down:
+                status[i] = dc_end_down 
+                ref = prices[i]
+                i_ref = i
+                continue
+            if prices[i] < ref:
+                ref = prices[i]
+                i_ref = i
+                
+    df = pd.DataFrame({'Time': time, 'Price': prices, 'Status': status, 'ror': ror})
+    return df
+    
+    
+    
+    
+    
+    
+    
+
+       
 def save(path, time, prices):
     tlist = []
     for t in time:
@@ -253,7 +318,8 @@ def test():
     n = 30000
     time = time[-n:]
     prices = prices[-n:]
-    #save('./gbpjpy.xlsx', time, prices)
+    df = validation(time, prices, 0.05, 0.05)
+    df.to_excel('./gbpjpy.xlsx', index=False)
     
     m = n #2000
     buffer = DataBuffer(time[:m], prices[:m])
