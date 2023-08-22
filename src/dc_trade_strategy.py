@@ -238,7 +238,9 @@ def disp(positions):
        
 def validation(time, prices, th_up, th_down):
     dc_end_up = 1 
+    os_end_up = 2
     dc_end_down = -1
+    os_end_down = -2
     up = 1 
     down = -1
     n = len(prices)
@@ -257,13 +259,13 @@ def validation(time, prices, th_up, th_down):
             i_ref = i
             begin = i + 1 
             ref = prices[i]
-            direction = down
+            direction = up
             break
         elif r <= -1 * th_down :
             status[i] = dc_end_down
             i_ref = i
             begin = i + 1
-            direction = up
+            direction = down
             ref = prices[i]
             break
 
@@ -272,34 +274,30 @@ def validation(time, prices, th_up, th_down):
         r = (prices[i] / ref - 1) * 100 
         ror[i] = r
         if direction == up:
-            if r >= th_up:
-                status[i] = dc_end_up
+            if r <= -1 * th_down:
+                status[i] = dc_end_down
+                status[i_ref] = os_end_up
                 ref = prices[i]
                 i_ref = i
+                direction = down
                 continue 
             if prices[i] > ref:
                 ref = prices[i]
                 i_ref = i 
         else:
-            if r <= -1 * th_down:
-                status[i] = dc_end_down 
+            if r >= th_up:
+                status[i] = dc_end_up
+                status[i_ref] = os_end_down
                 ref = prices[i]
                 i_ref = i
+                direction = up
                 continue
             if prices[i] < ref:
                 ref = prices[i]
                 i_ref = i
                 
-    df = pd.DataFrame({'Time': time, 'Price': prices, 'Status': status, 'ror': ror})
+    df = pd.DataFrame({'Time': time, 'Price': prices, 'Refference': refs, 'Status': status, 'ror': ror})
     return df
-    
-    
-    
-    
-    
-    
-    
-
        
 def save(path, time, prices):
     tlist = []
@@ -319,7 +317,7 @@ def test():
     time = time[-n:]
     prices = prices[-n:]
     df = validation(time, prices, 0.05, 0.05)
-    df.to_excel('./gbpjpy.xlsx', index=False)
+    df.to_excel('./gbpjpy.xlsx')
     
     m = n #2000
     buffer = DataBuffer(time[:m], prices[:m])
