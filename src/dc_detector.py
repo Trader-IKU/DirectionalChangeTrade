@@ -27,30 +27,38 @@ class EventStatus:
     OS = 3
 
 def indicators(dc_event, os_event, time_unit: TimeUnit):
+    def interval(t0, t1):
+        t = t1 - t0
+        if time_unit == TimeUnit.DAY:        
+             T = t.total_seconds() / 60 / 60 / 24
+        elif time_unit == TimeUnit.HOUR:
+            T = t.total_seconds() / 60 / 60
+        elif time_unit == TimeUnit.MINUTE:
+            T = t.total_seconds() / 60
+        elif time_unit == TimeUnit.SECOND:
+            T = t.total_seconds()
+        return T
+    
+    T = interval(dc_event.term[0], os_event.term[1])
+    Tdc = interval(dc_event.term[0], dc_event.term[1])
+    Tos = interval(os_event.term[0], os_event.term[1])
     try:
         TMV = abs(os_event.price[1] - dc_event.price[0]) / dc_event.price[0] / dc_event.threshold_percent * 100.0
+        k = Tos / Tdc
     except:
-        return (None, None, None)
-    t = os_event.term[1] - dc_event.term[0]
-    if time_unit == TimeUnit.DAY:        
-         T = t.total_seconds() / 60 / 60 / 24
-    elif time_unit == TimeUnit.HOUR:
-        T = t.total_seconds() / 60 / 60
-    elif time_unit == TimeUnit.MINUTE:
-        T = t.total_seconds() / 60
-    elif time_unit == TimeUnit.SECOND:
-        T = t.total_seconds()
+        return (None, None, None, None, None, None)
+    
     #R = abs(os_event.price[1] - dc_event.price[0]) / dc_event.price[0] / T
     R = TMV / T
-    return (TMV, T, R)
+    return (TMV, R, T, k, Tdc, Tos)
 
 def coastline(events, time_unit: TimeUnit):
     s = 0.0
     for dc_event, os_event in events:
-        tmv, t, r = indicators(dc_event, os_event, time_unit)
-        if tmv is None:
+        (TMV, R, T, k, Tdc, Tos) = indicators(dc_event, os_event, time_unit)
+        if TMV is None:
             break
-        s += tmv
+        s += TMV
     return s
 # ----
 

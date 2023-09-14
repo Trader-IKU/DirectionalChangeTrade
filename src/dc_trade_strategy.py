@@ -226,10 +226,10 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
         #dc_event.desc()
         #os_event.desc()
         #print('--')
-        (TMV, T, R) = indicators(dc_event, os_event, TimeUnit.DAY)
-        s1 = "#{}  TMV: {:.5f}  ".format(i + 1, TMV)
+        (TMV, R, T, k, Tdc, Tos) = indicators(dc_event, os_event, TimeUnit.DAY)
+        s1 = "#{}  k: {:.3f}  ".format(i + 1, k)
         chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, s1)
-        s2 = '#{} TMV: {:.5f}  T:{}  index:{}-{} dc_end_time: {}'.format(i + 1, TMV, T, dc_event.index, os_event.index, dc_event.term[1])
+        s2 = '#{} TMV: {:.5f}  T:{}  k:{} index:{}-{} dc_end_time: {}'.format(i + 1, TMV, T, k, dc_event.index, os_event.index, dc_event.term[1])
         print(s2)
         
 def disp(positions):

@@ -65,7 +65,7 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
             print('#' +str(i + 1) + '... No OS event')
             break
         chart.drawLine(os_event.term, os_event.price, should_set_xlim=False, linewidth=3.0, color=c, linestyle='dotted')
-        (TMV, T, R) = indicators(dc_event, os_event, TimeUnit.DAY)
+        (TMV, R, T, k, Tdc, Tos) = indicators(dc_event, os_event, TimeUnit.DAY)
         label1 = "#{}  TMV: {:.5f}  ".format(i + 1, TMV)
         label2 = " T: {}  R: {:.5f}".format(T, R)
         chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05
