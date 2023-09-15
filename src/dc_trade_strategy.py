@@ -201,6 +201,7 @@ class Handling:
         return detector.events, self.trade.positions
 # -----
 
+
 def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOUR):
     fig, ax = makeFig(1, 1, (30,10))
     chart = CandleChart(fig, ax, title='', date_format=date_format)
@@ -226,11 +227,27 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
         #dc_event.desc()
         #os_event.desc()
         #print('--')
-        (TMV, R, T, k, Tdc, Tos) = indicators(dc_event, os_event, TimeUnit.DAY)
-        s1 = "#{}  k: {:.3f}  ".format(i + 1, k)
+        (TMV, R, T, kT, kPrice, Tdc, Tos) = indicators(dc_event, os_event, TimeUnit.DAY)
+        s1 = "#{} kT:{:.3f} kPrice:{:.3f} ".format(i + 1, kT, kPrice)
         chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, s1)
-        s2 = '#{} TMV: {:.5f}  T:{}  k:{} index:{}-{} dc_end_time: {}'.format(i + 1, TMV, T, k, dc_event.index, os_event.index, dc_event.term[1])
+        s2 = '#{} TMV: {:.5f}  T:{}  kT:{} kPrice:{} index:{}-{} dc_end_time: {}'.format(i + 1, TMV, T, kT, kPrice, dc_event.index, os_event.index, dc_event.term[1])
         print(s2)
+        
+def calc_event_indicator(events):
+    out = []
+    for i, evs in enumerate(events):
+        dc_event, os_event = evs
+        if dc_event is None:
+            print('#' +str(i + 1) + '... No DC event and OS event')
+            continue            
+        if os_event is None:
+            print('#' +str(i + 1) + '... No OS event')
+            continue
+
+        (TMV, R, T, kT, kPrice, Tdc, Tos) = indicators(dc_event, os_event, TimeUnit.DAY)    
+        direction =  dc_event.direction
+        out.append([i, dc_event.term[0], direction, TMV, R, T, kT, kPrice, Tdc, Tos])
+    return out
         
 def disp(positions):
     for position in positions:
@@ -314,18 +331,24 @@ def test():
     time = ticks[Const.TIME]
     prices = ticks[Const.PRICE]
     n = 30000
-    time = time[-n:]
-    prices = prices[-n:]
-    df = validation(time, prices, 0.05, 0.05)
-    df.to_excel('./gbpjpy.xlsx')
+    #time = time[-n:]
+    #prices = prices[-n:]
     
-    m = n #2000
-    buffer = DataBuffer(time[:m], prices[:m])
+    #df = validation(time, prices, 0.05, 0.05)
+    #df.to_excel('./gbpjpy.xlsx')
+    
+    #m = n #2000
+    buffer = DataBuffer(time, prices)
     trade_rule = AlternateTrade(param_long(), param_short())
     loop = Handling(trade_rule)
     events, positions = loop.back_test(buffer)
-    disp(positions)
-    plot_events(events, time, prices)
+    result = calc_event_indicator(events)
+    df = pd.DataFrame(data=result, columns=['i', 'time', 'direction', 'TMV', 'R', 'T', 'kT', 'kPrice', 'Tdc', 'Tos'])
+    df.to_excel('indicators.xlsx', index=False)
+    
+    
+    #disp(positions)
+    #plot_events(events, time, prices)
 
 if __name__ == '__main__':
     test()

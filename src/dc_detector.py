@@ -44,18 +44,19 @@ def indicators(dc_event, os_event, time_unit: TimeUnit):
     Tos = interval(os_event.term[0], os_event.term[1])
     try:
         TMV = abs(os_event.price[1] - dc_event.price[0]) / dc_event.price[0] / dc_event.threshold_percent * 100.0
-        k = Tos / Tdc
+        kT = Tos / Tdc
+        kPrice = (os_event.price[1] - os_event.price[0]) / (dc_event.price[1] - dc_event.price[0])
     except:
-        return (None, None, None, None, None, None)
+        return (None, None, None, None, None, None, None)
     
     #R = abs(os_event.price[1] - dc_event.price[0]) / dc_event.price[0] / T
     R = TMV / T
-    return (TMV, R, T, k, Tdc, Tos)
+    return (TMV, R, T, kT, kPrice, Tdc, Tos)
 
 def coastline(events, time_unit: TimeUnit):
     s = 0.0
     for dc_event, os_event in events:
-        (TMV, R, T, k, Tdc, Tos) = indicators(dc_event, os_event, time_unit)
+        (TMV, R, T, kT, kPrice, Tdc, Tos) = indicators(dc_event, os_event, time_unit)
         if TMV is None:
             break
         s += TMV
