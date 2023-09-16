@@ -28,18 +28,18 @@ class TradeRuleParams:
         self.close_timelimit: float = 2.0
         self.losscut: float = 0.0
         
-def param_long():
+def param_long(th_percent):
     param = TradeRuleParams()
-    param.th_percent = 0.05
+    param.th_percent = th_percent
     param.horizon = 0
     param.pullback_percent = 0.04
     param.close_timelimit = 10
     param.losscut = 1
     return param
     
-def param_short():
+def param_short(th_percent):
     param = TradeRuleParams()
-    param.th_percent = 0.05
+    param.th_percent = th_percent
     param.horizon = 0
     param.pullback_percent = 0.04
     param.close_timelimit = 10    
@@ -323,7 +323,33 @@ def save(path, time, prices):
     df = pd.DataFrame({'Time': tlist, 'Price': prices})
     df.to_excel(path, index=True)
         
-def test():
+def evaluate(data: DataBuffer, trade_rule: AlternateTrade):
+    loop = Handling(trade_rule)
+    events, positions = loop.back_test(data)
+    result = calc_event_indicator(events)
+    columns=['i', 'time', 'direction', 'TMV', 'R', 'T', 'kT', 'kPrice', 'Tdc', 'Tos']
+    df = pd.DataFrame(data=result, columns=columns)
+    return df
+    
+def statics(df, items, th_long, th_short):
+    n = len(df)
+    data = [th_long, th_short, n]
+    columns = ['th_long', 'th_short', 'n']
+    for item in items:
+        d = df[item]
+        data.append(d.mean())
+        columns.append(item + '_maen')
+        data.append(d.std())
+        columns.append(item + '_std')    
+        data.append(d.min())
+        columns.append(item + '_min')
+        data.append(d.max())
+        columns.append(item + '_max')        
+    
+    out = pd.DataFrame(data=[data], columns=columns)
+    return out
+
+def main():
     with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
         ticks = pickle.load(f)
     print('Load size:', len(ticks[Const.TIME]))
@@ -333,22 +359,30 @@ def test():
     n = 30000
     #time = time[-n:]
     #prices = prices[-n:]
+    buffer = DataBuffer(time, prices)
     
     #df = validation(time, prices, 0.05, 0.05)
     #df.to_excel('./gbpjpy.xlsx')
-    
-    #m = n #2000
-    buffer = DataBuffer(time, prices)
-    trade_rule = AlternateTrade(param_long(), param_short())
-    loop = Handling(trade_rule)
-    events, positions = loop.back_test(buffer)
-    result = calc_event_indicator(events)
-    df = pd.DataFrame(data=result, columns=['i', 'time', 'direction', 'TMV', 'R', 'T', 'kT', 'kPrice', 'Tdc', 'Tos'])
-    df.to_excel('indicators.xlsx', index=False)
+    df = None
+    count = 0
+    for th_long in np.arange(0.01, 0.1, 0.01):
+        for th_short in np.arange(0.01, 0.1, 0.01):
+            count += 1 
+            print(count)
+            trade_rule = AlternateTrade(param_long(th_long), param_short(th_short))
+            indicators = evaluate(buffer, trade_rule)
+            stat = statics(indicators, ['kT', 'kPrice'], th_long, th_short)
+            if df is None:
+                df = stat
+            else:
+                df = pd.concat([df, stat])
+    df.to_excel('./indicators.xlsx')
+   
+    #df.to_excel('indicators.xlsx', index=False)
     
     
     #disp(positions)
     #plot_events(events, time, prices)
 
 if __name__ == '__main__':
-    test()
+    main()
