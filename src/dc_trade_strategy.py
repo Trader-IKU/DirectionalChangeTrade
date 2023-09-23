@@ -14,11 +14,19 @@ import pandas as pd
 import numpy as np
 import pickle
 from datetime import datetime, timedelta 
+from time import sleep
+from matplotlib import patches
+import logging
 
 from const import Const
 from converter import Converter
 from candle_chart import CandleChart, BandPlot, makeFig, gridFig, Colors
 from dc_detector import DCDetector, Direction, indicators, TimeUnit, coastline, EventStatus
+
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s - %(levelname)s:%(name)s - %(message)s",
+                    filename='./profit.log')
+    
 
 class TradeRuleParams:
     def __init__(self):
@@ -173,7 +181,24 @@ class Handling:
     def __init__(self, trade: AlternateTrade):
         self.trade = trade
         pass
-        
+    
+    def detect_test(self, data: DataBuffer):
+        detector = DCDetector(data.time, data.prices) 
+        time = data.time
+        prices = data.prices        
+        n = len(prices)   
+        i = 200
+        t = time[:i]
+        p = prices[:i]
+        detector.run(t, p, self.trade.param_up.th_percent, self.trade.param_down.th_percent)
+        i += 1
+        while i < n:            
+            t = time[: i]
+            p = prices[: i]
+            detector.update(t, p)
+            i += 1
+        return detector.events    
+
     def back_test(self, data: DataBuffer):
         detector = DCDetector(data.time, data.prices) 
         time = data.time
@@ -184,7 +209,7 @@ class Handling:
         p = prices[:i]
         detector.run(t, p, self.trade.param_up.th_percent, self.trade.param_down.th_percent)
         i_last = i
-        i += 5
+        i += 1
         while i < n:            
             t = time[: i]
             p = prices[: i]
@@ -197,7 +222,7 @@ class Handling:
                 dc_event = detector.pair[0]
                 self.trade.close_all(time, prices, dc_event)
                 self.trade.entry(t, p, i_last, dc_event, len(detector.events))
-            i += 5
+            i += 1
         return detector.events, self.trade.positions
 # -----
 
@@ -210,7 +235,7 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
     for i, evs in enumerate(events):
         dc_event, os_event = evs
         if dc_event is None:
-            print('#' +str(i + 1) + '... No DC event and OS event')
+            s = '#' +str(i + 1) + '... No DC event and OS event'
         if dc_event.direction == Direction.Up:
             c = 'green'
         else:
@@ -231,7 +256,7 @@ def plot_events(events, time, price, date_format=CandleChart.DATE_FORMAT_DAY_HOU
         s1 = "#{} kT:{:.3f} kPrice:{:.3f} ".format(i + 1, kT, kPrice)
         chart.drawText(x, y + (chart.getYlimit()[1] - chart.getYlimit()[0]) * 0.05, s1)
         s2 = '#{} TMV: {:.5f}  T:{}  kT:{} kPrice:{} index:{}-{} dc_end_time: {}'.format(i + 1, TMV, T, kT, kPrice, dc_event.index, os_event.index, dc_event.term[1])
-        print(s2)
+        logging.info(s2)
         
 def calc_event_indicator(events):
     out = []
@@ -316,6 +341,33 @@ def validation(time, prices, th_up, th_down):
     df = pd.DataFrame({'Time': time, 'Price': prices, 'Refference': refs, 'Status': status, 'ror': ror})
     return df
        
+
+def trend_follow_simulation(events, time, prices, is_long): 
+    n = len(events)
+    profits = 0 
+    profit_rates = 0
+    draw_down = 0
+    for i in range(0, n - 1):
+        _, os_event = events[i]
+        next_dc_event, _ = events[i + 1]
+        p0 = prices[os_event.index[0] + 1]
+        j = next_dc_event.index[1] + 1
+        if j > len(prices) - 1:
+            j = len(prices) - 1
+        p1 = prices[j]
+        delta = p1 - p0
+        if os_event.direction == Direction.Down:
+            delta *= -1
+        if os_event.direction == Direction.Up and is_long:
+            profits += delta
+        if os_event.direction == Direction.Down and is_long == False:
+            profits += delta
+        if profits < draw_down:
+            draw_down = profits
+        profit_rates += delta / p0
+        logging.info('i:' + str(i) + ' profit: ' + str(delta))
+    return profits, profit_rates, draw_down
+
 def save(path, time, prices):
     tlist = []
     for t in time:
@@ -323,7 +375,16 @@ def save(path, time, prices):
     df = pd.DataFrame({'Time': tlist, 'Price': prices})
     df.to_excel(path, index=True)
         
-def evaluate(data: DataBuffer, trade_rule: AlternateTrade):
+
+def detect1(data: DataBuffer, trade_rule: AlternateTrade):
+    loop = Handling(trade_rule)
+    events = loop.detect_test(data)
+    result = calc_event_indicator(events)
+    columns=['i', 'time', 'direction', 'TMV', 'R', 'T', 'kT', 'kPrice', 'Tdc', 'Tos']
+    df = pd.DataFrame(data=result, columns=columns)
+    return events, df
+
+def detect2(data: DataBuffer, trade_rule: AlternateTrade):
     loop = Handling(trade_rule)
     events, positions = loop.back_test(data)
     result = calc_event_indicator(events)
@@ -338,7 +399,7 @@ def statics(df, items, th_long, th_short):
     for item in items:
         d = df[item]
         data.append(d.mean())
-        columns.append(item + '_maen')
+        columns.append(item + '_mean')
         data.append(d.std())
         columns.append(item + '_std')    
         data.append(d.min())
@@ -349,40 +410,199 @@ def statics(df, items, th_long, th_short):
     out = pd.DataFrame(data=[data], columns=columns)
     return out
 
-def main():
-    with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
-        ticks = pickle.load(f)
-    print('Load size:', len(ticks[Const.TIME]))
 
+def draw_circle(ax, x, y, r1, r2, color='r'):
+    circle = patches.Circle(xy=(x, y), radius=r1, ec='w', fc=color)
+    ax.add_patch(circle)
+    circle = patches.Circle(xy=(x, y), radius=r2, ec='#444444', fill=False)
+    ax.add_patch(circle)
+    ax.grid()
+    ax.set_xlabel("Threshold_long")
+    ax.set_ylabel("Threshold_short")
+    
+def visualize(excel_path, symbol):
+    df = pd.read_excel(excel_path)
+   
+    limit = 0.07
+    #limit = 1.2
+    n = len(df)
+    k0_list = [0.0001, 0.00001]
+    #k0_list = [0.1, 0.01, 0.001]
+    for k0 in k0_list:
+        fig, ax = makeFig(1, 1, (10,10))
+        ax.set_xlim(0, limit)
+        ax.set_ylim(0, limit)
+        ax.set_title(symbol + ': kT distribution')
+        for row in range(n):
+            d = df.iloc[row]
+            mean = d['kT_mean']
+            if mean > limit / 20 / k0:
+                mean = limit / 20 / k0
+            std = d['kT_std']
+            draw_circle(ax, d['th_long'], d['th_short'], k0 * mean, k0 * std)
+    
+    fig, ax = makeFig(1, 1, (10,10))
+    ax.set_xlim(0, limit)
+    ax.set_ylim(0, limit)
+    ax.set_title(symbol + ': kPrice distribution')
+    k1 = 0.002
+    #k1 = 0.02
+    for row in range(n):
+        d = df.iloc[row]
+        mean = d['kPrice_mean']
+        std = d['kPrice_std']
+        draw_circle(ax, d['th_long'], d['th_short'], mean * k1, std * k1, color='g')
+        
+    fig, ax = makeFig(1, 1, (10,10))
+    ax.set_xlim(0, limit)
+    ax.set_ylim(0, limit)
+    ax.set_title(symbol + ': kPrice sum')
+    k2 = 0.000005
+    #k2 = 0.01
+    for row in range(n):
+        d = df.iloc[row]
+        sum = d['kPrice_mean'] * d['n']
+        draw_circle(ax, d['th_long'], d['th_short'], sum * k2, 0, color='b')
+    pass
+
+def visualize_profit(excel_path, symbol):
+    df = pd.read_excel(excel_path)
+   
+    limit = 0.12
+    #limit = 1.2
+    n = len(df)
+    k0 = 0.001
+    fig, ax = makeFig(1, 1, (10,10))
+    ax.set_xlim(0, limit)
+    ax.set_ylim(0, limit)
+    ax.set_title(symbol + ': Profits')
+    for row in range(n):
+        d = df.iloc[row]
+        value = d['profits'] * k0
+        if value > 0:
+            c = 'g'
+        else:
+            c = 'r'
+            value *= -1
+        draw_circle(ax, d['th_long'], d['th_short'], value, 0, c)
+
+
+def optimize(ticks):
     time = ticks[Const.TIME]
     prices = ticks[Const.PRICE]
-    n = 30000
-    #time = time[-n:]
-    #prices = prices[-n:]
+    n = int(len(prices) /40)
+    time = time[-n:]
+    prices = prices[-n:]
     buffer = DataBuffer(time, prices)
     
     #df = validation(time, prices, 0.05, 0.05)
     #df.to_excel('./gbpjpy.xlsx')
     df = None
     count = 0
-    for th_long in np.arange(0.01, 0.1, 0.01):
-        for th_short in np.arange(0.01, 0.1, 0.01):
-            count += 1 
-            print(count)
+    t0 = datetime.now()
+    for th_long in np.arange(0.06, 0.01, -0.01):
+        for th_short in np.arange(0.06, 0.01, -0.01):
             trade_rule = AlternateTrade(param_long(th_long), param_short(th_short))
-            indicators = evaluate(buffer, trade_rule)
+            events, indicators = detect1(buffer, trade_rule)
             stat = statics(indicators, ['kT', 'kPrice'], th_long, th_short)
             if df is None:
                 df = stat
             else:
                 df = pd.concat([df, stat])
-    df.to_excel('./indicators.xlsx')
+            count += 1
+            now = datetime.now()
+            print(count, 'Elapsed time:', now - t0)
+            t0 = now
+            sleep(10)
+    df.to_excel('./indicators.xlsx', index=False)
    
     #df.to_excel('indicators.xlsx', index=False)
     
     
     #disp(positions)
     #plot_events(events, time, prices)
+    
+def detect_and_plot(time, prices, th_long, th_short):
+    buffer = DataBuffer(time, prices)
+    trade_rule = AlternateTrade(param_long(th_long), param_short(th_short))
+    events, indicators = detect1(buffer, trade_rule)    
+    profits, profit_rates, draw_down = trend_follow_simulation(events, time, prices, th_long > th_short)
+    plot_events(events, time, prices)
+    print('n: ', len(events) - 1, 'Profit: ', profits, 'Profit rates:', profit_rates)
+
+
+def profit_simulation(time, prices):
+    buffer = DataBuffer(time, prices)
+    
+    large = np.arange(0.1, 2.0, 0.1)
+    small = np.arange(0.01, 0.1, 0.01)
+
+    count = 0
+    t0 = datetime.now()
+    data = []
+
+    combination = []    
+    for i in range(2):
+        if i == 0:
+            for th_long in large:
+                for th_short in small:
+                    combination.append([th_long, th_short])
+        else:
+            for th_long in small:
+                for th_short in small:
+                    combination.append([th_long, th_short])
+                    
+    for th_long, th_short in combination:
+        trade_rule = AlternateTrade(param_long(th_long), param_short(th_short))
+        events, indicators = detect1(buffer, trade_rule)    
+        profits, profit_rates, draw_down = trend_follow_simulation(events, time, prices, th_long > th_short)
+        data.append([th_long, th_short, profits, profit_rates, draw_down])
+        count += 1
+        now = datetime.now()
+        s = str(count) + ' Elapsed time: ' + str(now - t0) + ' th_long: ' +  str(th_long) + ' th_short: ' + str(th_short) +  ' profit: ' + str(profits)
+        logging.info(s)
+        print(s)
+        t0 = now
+        sleep(10)
+        
+    df = pd.DataFrame(data=data, columns=['th_long', 'th_short', 'profits', 'profit_rates', 'draw_down'])
+    df.to_excel('gbpjpy_profits.xlsx', index=False)
+
+
+
+def main():
+    with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
+        ticks = pickle.load(f)
+    print('Load size:', len(ticks[Const.TIME]))
+    #main()
+    #detect_and_plot(ticks, 0.05, 0.05)
+    time = ticks[Const.TIME]
+    prices = ticks[Const.PRICE]
+    n = int(len(prices) /100)
+    time = time[-n:]
+    prices = prices[-n:]
+    profit_simulation(time, prices)
+    
+    
+
+
+def graph():
+    #visualize('./gbpjpy2023/indicators3.xlsx', 'GBPJPY')
+    visualize_profit('./gbpjpy_profits.xlsx', 'GBPJPY')
+
+def chart():
+    with open('./data/TICK/GBPJPY_2023.pkl', 'rb') as f:
+        ticks = pickle.load(f)
+    print('Load size:', len(ticks[Const.TIME]))
+    #main()
+    #detect_and_plot(ticks, 0.05, 0.05)
+    time = ticks[Const.TIME]
+    prices = ticks[Const.PRICE]
+    n = int(len(prices) /500)
+    time = time[-n:]
+    prices = prices[-n:]    
+    detect_and_plot(time, prices, 0.04, 0.05)
 
 if __name__ == '__main__':
-    main()
+    #main()
+    chart()
